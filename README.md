@@ -38,6 +38,9 @@ python embeddings/pool_ingredients.py
 ```bash
 python search/build_indices.py
 python search/run_umap.py
+# These are useful to see plots/evaluations
+python search/make_plots.py
+python search/run_evals.py
 ```
 ## Step 4. Streamlit Demo App
 ```bash
