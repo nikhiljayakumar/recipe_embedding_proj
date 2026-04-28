@@ -2,7 +2,6 @@
 # Data & large binary files
 # =============================================================================
 data/
-embeddings/
 *.pkl
 *.parquet
 *.npy
