@@ -1,18 +1,8 @@
-"""run_evals.py — Generate the three qualitative eval reports.
-
-Produces, in search/eval/:
+"""run_evals.py
+outputs for blog post and video stuff
   - analogies.md            ~17 ingredient analogies (mix of hits and misses)
   - nearest_neighbors.md    Top-10 NN for 20 ingredients and 10 recipes
   - substitution_check.md   15 ingredients with annotated NN
-
-Reports include both successes and failures — failure modes are blog-worthy.
-The substitution annotations are TEMPLATES; you'll want to read the output
-and replace the "[review]" markers with your judgment ("good substitute",
-"co-occurrence not substitute", "noise", etc).
-
-Imports search.py, so all module-level loads happen once.
-
-Usage: python run_evals.py
 """
 
 from __future__ import annotations
@@ -31,10 +21,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 EVAL_DIR = PROJECT_ROOT / "search" / "eval"
 EVAL_DIR.mkdir(parents=True, exist_ok=True)
 
-
-# ---------------------------------------------------------------------------
-# Probes
-# ---------------------------------------------------------------------------
 
 INGREDIENT_PROBES = [
     "basil", "oregano", "soy_sauce", "fish_sauce", "butter", "olive_oil",
@@ -82,8 +68,6 @@ SUBSTITUTION_CHECK = [
 
 # ---------------------------------------------------------------------------
 # Markdown writers
-# ---------------------------------------------------------------------------
-
 def write_analogies() -> None:
     out = EVAL_DIR / "analogies.md"
     lines: list[str] = [

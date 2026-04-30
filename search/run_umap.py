@@ -1,6 +1,6 @@
 """run_umap.py — Reduce recipe and ingredient vectors to 2D with UMAP.
 
-Outputs (search/visualization/):
+outputs:
   - umap_recipes.npy          (N, 2) float32
   - umap_recipes.csv          recipe_id, x, y, title
   - umap_ingredients.npy      (V, 2) float32
@@ -11,14 +11,6 @@ Parameters per the spec:
   - n_neighbors=15 for recipes (default; balanced local/global structure)
   - n_neighbors=10 for ingredients (smaller vocab, tighter neighborhoods)
   - random_state=42 for reproducibility
-
-Runtime: ~2-5 min for recipes on CPU, <30s for ingredients.
-
-Critical: do NOT shuffle/filter between loading vectors and fitting UMAP.
-Row order in the input == row order in the output, and that's what makes
-the coordinates align with the ID maps.
-
-Usage: python run_umap.py
 """
 
 from __future__ import annotations
@@ -30,6 +22,7 @@ import numpy as np
 import pandas as pd
 import umap
 
+# change these depending on environment/config
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 EMB_DIR = PROJECT_ROOT / "embeddings"
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "recipes_clean.pkl"
@@ -73,12 +66,10 @@ def main() -> None:
     print(f"  saved {recipe_2d.shape[0]} recipe coords")
 
     # ---- Ingredients (W2V, 100-dim, normalize before reducing) ----
-    print("\nRunning UMAP on ingredients (W2V, 100-dim, normalized)...")
     ing_raw = np.load(EMB_DIR / "ingredient_vectors.npy")
     norms = np.linalg.norm(ing_raw, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
     ing_norm = (ing_raw / norms).astype("float32")
-    print(f"  input shape: {ing_norm.shape}")
 
     reducer = umap.UMAP(
         n_components=2,
@@ -100,8 +91,6 @@ def main() -> None:
         "x": ing_2d[:, 0],
         "y": ing_2d[:, 1],
     }).to_csv(VIS_DIR / "umap_ingredients.csv", index=False)
-    print(f"  saved {ing_2d.shape[0]} ingredient coords")
-
     print("\nUMAP done. Outputs in search/visualization/")
 
 

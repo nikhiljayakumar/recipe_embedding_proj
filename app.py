@@ -1,30 +1,5 @@
 """app.py — Recipe Embedding Explorer (Streamlit demo)
-
-Run from the project root:
-    streamlit run app.py
-
-Expects the following layout:
-    RECIPE_EMBEDDING_PROJ/
-        app.py                          <- this file
-        data/processed/
-            recipes_clean.pkl
-            ingredient_vocab.json
-        search/
-            search.py
-            recipe_text_index.faiss
-            recipe_ingredient_index.faiss
-            ingredient_index.faiss
-            visualization/
-                umap_recipes.csv
-                umap_ingredients.csv
-        embeddings/
-            recipe_vectors.npy
-            recipe_vectors_from_ingredients.npy
-            ingredient_vectors.npy
-            ingredient_id_map.json
-            ingredient_id_map_reverse.json
-            recipe_id_map.json
-            word2vec.model
+streamlit run app.py
 """
 
 import sys
@@ -51,10 +26,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# ---------------------------------------------------------------------------
 # Resource loaders (cached so models load once, not on every interaction)
-# ---------------------------------------------------------------------------
-
 @st.cache_resource(show_spinner="Loading search indices and models…")
 def load_search():
     """Import search.py and trigger its module-level resource loading."""
@@ -90,8 +62,6 @@ def load_ingredient_vocab() -> list[str]:
 
 # ---------------------------------------------------------------------------
 # Helper: build a recipe detail card
-# ---------------------------------------------------------------------------
-
 def _recipe_card(row: pd.Series, score: float, rank: int) -> None:
     """Render a single recipe result as a styled markdown card."""
     raw = row.get("raw_ingredients", [])
@@ -130,10 +100,7 @@ def _recipe_card(row: pd.Series, score: float, rank: int) -> None:
         st.divider()
 
 
-# ---------------------------------------------------------------------------
 # Page 1: Recipe Search
-# ---------------------------------------------------------------------------
-
 def page_recipe_search(search, df: pd.DataFrame) -> None:
     st.header("🔍 Recipe Search")
     st.caption(
@@ -182,10 +149,7 @@ def page_recipe_search(search, df: pd.DataFrame) -> None:
         _recipe_card(id_to_row.loc[rid], hit["score"], rank)
 
 
-# ---------------------------------------------------------------------------
 # Page 2: Ingredient Explorer
-# ---------------------------------------------------------------------------
-
 def page_ingredient_explorer(search, df: pd.DataFrame, vocab: list[str]) -> None:
     st.header("🧄 Ingredient Explorer")
     st.caption(
@@ -193,8 +157,8 @@ def page_ingredient_explorer(search, df: pd.DataFrame, vocab: list[str]) -> None
         "that match a combination of ingredients you have on hand."
     )
 
-    tab_similar, tab_combo = st.tabs(
-        ["Similar Ingredients", "Find Recipes by Ingredients"]
+    tab_similar, tab_combo, tab_analogy = st.tabs(
+        ["Similar Ingredients", "Find Recipes by Ingredients", "Ingredient Analogy"]
     )
 
     # ---- Sub-tab A: similar ingredients ----
@@ -276,12 +240,62 @@ def page_ingredient_explorer(search, df: pd.DataFrame, vocab: list[str]) -> None
                         _recipe_card(id_to_row.loc[rid], hit["score"], rank)
         else:
             st.info("Select ingredients above and press **Find Recipes**.")
+    # ---- Sub-tab C: ingredient analogy ----
+    # this kinda works, but not the best because our vocab isn't the best (only 50k samples)
+    with tab_analogy:
+        st.subheader("Ingredient analogy: A − B + C = ?")
+        st.caption(
+            "Vector arithmetic on ingredient embeddings. Classic example: "
+            "**butter − dairy + oil** finds oil-based substitutes for butter."
+        )
 
+        col_a, col_minus, col_b, col_plus, col_c = st.columns([4, 1, 4, 1, 4])
+        with col_a:
+            term_a = st.text_input("A (start with)", placeholder="e.g. butter")
+        with col_minus:
+            st.markdown("<br><h3 style='text-align:center'>−</h3>", unsafe_allow_html=True)
+        with col_b:
+            term_b = st.text_input("B (subtract)", placeholder="e.g. dairy")
+        with col_plus:
+            st.markdown("<br><h3 style='text-align:center'>+</h3>", unsafe_allow_html=True)
+        with col_c:
+            term_c = st.text_input("C (add)", placeholder="e.g. oil")
 
-# ---------------------------------------------------------------------------
+        k_analogy = st.selectbox("Results", [5, 10], index=0, key="k_analogy")
+
+        if st.button("Solve Analogy", type="primary"):
+            if not all([term_a.strip(), term_b.strip(), term_c.strip()]):
+                st.warning("Please fill in all three fields.")
+            else:
+                # Check vocab membership before calling the model
+                unknown = [
+                    t for t in [term_a, term_b, term_c]
+                    if search.is_known_ingredient(t.strip()) is None
+                ]
+                if unknown:
+                    st.error(
+                        f"Not in vocabulary: **{', '.join(unknown)}**. "
+                        "Try simpler ingredient names (e.g. 'butter' not 'unsalted butter')."
+                    )
+                else:
+                    with st.spinner("Computing…"):
+                        results = search.ingredient_analogy(
+                            positive=[term_a.strip(), term_c.strip()],
+                            negative=[term_b.strip()],
+                            k=k_analogy,
+                        )
+                    if not results:
+                        st.error("No results — the analogy may not have a meaningful answer in this embedding space.")
+                    else:
+                        st.success(f"**{term_a} − {term_b} + {term_c}** =")
+                        st.table(pd.DataFrame([
+                            {"Ingredient": r["name"], "Score": f"{r['score']:.3f}"}
+                            for r in results
+                        ]))
+        else:
+            st.info("Fill in the three fields above and press **Solve Analogy**.")
+
 # Page 3: Embedding Map
-# ---------------------------------------------------------------------------
-
 def page_embedding_map(
     umap_recipes: pd.DataFrame,
     umap_ingredients: pd.DataFrame,
@@ -370,12 +384,9 @@ def page_embedding_map(
         st.plotly_chart(fig2, use_container_width=True)
 
 
-# ---------------------------------------------------------------------------
 # Main layout
-# ---------------------------------------------------------------------------
-
 def main() -> None:
-    st.title("🍴 Recipe Embedding Explorer")
+    st.title("Recipe Embedding Explorer")
     st.markdown(
         "Semantic search and exploration over a dataset of 50,000+ recipes — "
         "powered by SBERT recipe embeddings and Word2Vec ingredient embeddings."
@@ -389,7 +400,7 @@ def main() -> None:
         vocab = load_ingredient_vocab()
 
     tab_search, tab_ing, tab_map = st.tabs(
-        ["🔍 Recipe Search", "🧄 Ingredient Explorer", "🗺️ Embedding Map"]
+        ["Recipe Search", "Ingredient Explorer", "Embedding Map"]
     )
 
     with tab_search:

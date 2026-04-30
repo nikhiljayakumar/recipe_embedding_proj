@@ -115,7 +115,6 @@ def validate(df) -> None:
 
 
 if __name__ == "__main__":
-    # CLI: python schemas.py path/to/recipes_clean.pkl
     import sys
     import pandas as pd
 

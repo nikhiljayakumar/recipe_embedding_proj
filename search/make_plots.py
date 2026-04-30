@@ -1,24 +1,14 @@
 """make_plots.py — Generate the PNG plots for the blog post.
 
-Produces, in search/visualization/:
+outputs
   1. recipes_umap_unlabeled.png      Full scatter, light gray, no labels.
   2. recipes_umap_by_cuisine.png     Same scatter, colored by heuristic cuisine.
   3. ingredients_umap.png            Top-100 most common ingredients labeled.
   4. ingredient_neighborhoods.png    4-panel zoom on interesting clusters.
 
-CUISINE LABELING IS A HEURISTIC: keyword matching against recipe TITLES (per
-Agent 2's note that cuisine words live in titles, not in ingredient lists).
+!!!CUISINE LABELING IS A HEURISTIC: keyword matching against recipe TITLES (per
+ note that cuisine words live in titles, not in ingredient lists).
 The plot caption flags this so blog readers don't think it's ground truth.
-
-Optional: plot_analogy(positive, negative) renders one analogy with arrows
-in the ingredient UMAP space. NOT called from main() because Agent 2's
-sanity check showed cuisine words like "italian"/"japanese" are likely
-out-of-vocab in the W2V space, killing the spec's headline analogies. Run
-this manually after run_evals.py if a real analogy emerges:
-    from make_plots import plot_analogy
-    plot_analogy(positive=["yogurt"], negative=["milk"])
-
-Usage: python make_plots.py
 """
 
 from __future__ import annotations
@@ -43,11 +33,7 @@ VIS_DIR.mkdir(parents=True, exist_ok=True)
 plt.style.use("seaborn-v0_8-whitegrid")
 
 
-# ---------------------------------------------------------------------------
-# Cuisine heuristic (title-based per Agent 2's recommendation)
-# ---------------------------------------------------------------------------
-# Insertion-order preserved; ties on score broken in favor of earlier entries.
-
+# Cuisine heuristic
 CUISINE_TITLE_KEYWORDS: dict[str, list[str]] = {
     "italian": [
         "italian", "pasta", "spaghetti", "lasagna", "pizza", "risotto",
@@ -122,7 +108,6 @@ def label_cuisine(title: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Plot 1: recipes UMAP unlabeled
 # ---------------------------------------------------------------------------
-
 def plot_recipes_unlabeled(coords: np.ndarray, out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(14, 10))
     ax.scatter(coords[:, 0], coords[:, 1], s=2, alpha=0.3, color="#555555")
@@ -142,7 +127,6 @@ def plot_recipes_unlabeled(coords: np.ndarray, out_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Plot 2: recipes UMAP colored by cuisine
 # ---------------------------------------------------------------------------
-
 def plot_recipes_by_cuisine(
     coords: np.ndarray,
     titles: list[str],
@@ -191,8 +175,6 @@ def plot_recipes_by_cuisine(
 
 # ---------------------------------------------------------------------------
 # Plot 3: ingredients UMAP with top-N labeled
-# ---------------------------------------------------------------------------
-
 def plot_ingredients_umap(
     coords: np.ndarray,
     names: list[str],
@@ -253,10 +235,6 @@ def plot_ingredients_umap(
 
 # ---------------------------------------------------------------------------
 # Plot 4: 4-panel ingredient neighborhoods
-# ---------------------------------------------------------------------------
-
-# Each panel anchored on a "core" ingredient. We try a few candidate names
-# in case Agent 1's tokenization differs from what we expect.
 NEIGHBORHOOD_PANELS: list[tuple[str, list[str]]] = [
     ("Mediterranean herbs",  ["basil", "oregano", "thyme", "parsley"]),
     ("Asian sauces",         ["soy_sauce", "soy sauce", "fish_sauce", "sesame_oil"]),
@@ -338,10 +316,7 @@ def plot_neighborhoods(
     print(f"  saved {out_path.name}")
 
 
-# ---------------------------------------------------------------------------
-# Optional Plot 5: analogy visualization (call manually if a good one exists)
-# ---------------------------------------------------------------------------
-
+# Optional Plot 5: analogy visualization - only works w/ good one tbh
 def plot_analogy(
     positive: list[str],
     negative: list[str],
@@ -355,10 +330,6 @@ def plot_analogy(
     Arrows go from each negative term to each positive term to suggest
     the direction of analogy. Top-k nearest neighbors of the resolved
     point are highlighted.
-
-    Call this manually after run_evals.py once you've found a working
-    analogy. Example:
-        plot_analogy(positive=["yogurt"], negative=["milk"])
     """
     # Lazy import to avoid loading SBERT etc. if main() is the only target
     import sys
@@ -461,8 +432,11 @@ def main() -> None:
     print("\nPlot 4: 4-panel ingredient neighborhoods")
     plot_neighborhoods(ing_coords, names, name_to_idx, VIS_DIR / "ingredient_neighborhoods.png")
 
+    # try analogy plots?
+    plot_analogy(positive=["yogurt"], negative=["milk"])
+    plot_analogy(positive=["cumin"], negative=["coriander"])
+    plot_analogy(positive=["soy_sauce"], negative=["salt"])
     print("\nDone. See search/visualization/")
-    print("(For the optional analogy plot: from make_plots import plot_analogy)")
 
 
 if __name__ == "__main__":

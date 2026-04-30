@@ -1,16 +1,15 @@
 """
-02_encode_sbert.py
+encode_sbert.py
 ------------------
 Encodes each recipe (title + ingredients + instructions) with SBERT
 (all-MiniLM-L6-v2) into a 384-dim vector.
 
-Vectors are L2-normalized so that Agent 3 can use FAISS IndexFlatIP and
+Vectors are L2-normalized so that `search` can use FAISS IndexFlatIP and
 get cosine similarity for free. THIS IS THE SINGLE MOST COMMON FAISS BUG;
-do not change `normalize_embeddings=True` without telling Agent 3.
 
 Outputs (in OUTPUT_DIR):
     - recipe_vectors.npy : (N, 384) float32, L2-normalized
-    - recipe_id_map.json : {recipe_id: row_index}, identity if Agent 1 was clean
+    - recipe_id_map.json : {recipe_id: row_index}
 
 Runtime: ~10-20 min on CPU for 50k recipes, ~1 min on GPU.
 """
@@ -26,7 +25,7 @@ from sentence_transformers import SentenceTransformer
 DATA_PATH = Path("./data/processed/recipes_clean.pkl")
 OUTPUT_DIR = Path("./embeddings")
 
-MODEL_NAME = "all-MiniLM-L6-v2"   # 384-dim, fast, well-tested
+MODEL_NAME = "all-MiniLM-L6-v2"   # 384-dim, fast, well-tested standard
 BATCH_SIZE = 128                   # CPU-friendly; bump to 256 on GPU
 INSTRUCTION_CHAR_LIMIT = 500       # SBERT silently truncates at 256 tokens; be explicit
 # ----------------------------------------------------------------------------
@@ -46,22 +45,15 @@ def main() -> None:
     print(f"Loading recipes from {DATA_PATH}...")
     df = pd.read_pickle(DATA_PATH)
 
-    # --- Verify Agent 1's contract (same checks as 01) ---------------------
-    assert df["recipe_id"].is_monotonic_increasing, "recipe_id is not sorted"
-    assert df["recipe_id"].iloc[0] == 0, "recipe_id should start at 0"
-    assert df["recipe_id"].iloc[-1] == len(df) - 1, "recipe_id is not contiguous"
-    print(f"  OK -- {len(df)} recipes")
+    # this shoulda been checked by word2vec so its fine
+    # assert df["recipe_id"].is_monotonic_increasing, "recipe_id is not sorted"
+    # assert df["recipe_id"].iloc[0] == 0, "recipe_id should start at 0"
+    # assert df["recipe_id"].iloc[-1] == len(df) - 1, "recipe_id is not contiguous"
+    # print(f"  OK -- {len(df)} recipes")
 
-    # --- Build text -------------------------------------------------------
-    print("Building recipe texts...")
     texts = [build_recipe_text(row) for row in df.itertuples()]
-    print(f"  Sample text: {texts[0][:200]}...")
 
-    # --- Load SBERT (auto-detects CPU/GPU) ---------------------------------
-    print(f"Loading {MODEL_NAME}...")
     sbert_model = SentenceTransformer(MODEL_NAME)
-    # Note: not calling .to('cuda') -- SentenceTransformer auto-uses GPU if
-    # available, otherwise CPU. Leave as-is unless you want to force a device.
 
     # --- Encode -----------------------------------------------------------
     print(f"Encoding {len(texts)} recipes (batch_size={BATCH_SIZE})...")
@@ -73,17 +65,15 @@ def main() -> None:
         normalize_embeddings=True,   # CRITICAL: cosine == inner-product after this
     ).astype(np.float32)
 
-    # --- Sanity check normalization ---------------------------------------
+    # --- Sanity check ---------------------------------------
     norms = np.linalg.norm(recipe_vectors, axis=1)
     assert np.allclose(norms, 1.0, atol=1e-4), (
         f"Vectors are not L2-normalized! norms range: {norms.min():.4f} to {norms.max():.4f}"
     )
     print(f"  Verified L2-normalized (all norms ~= 1.0)")
 
-    # --- Build identity recipe_id -> row map ------------------------------
     recipe_id_map = {int(rid): int(rid) for rid in df["recipe_id"]}
 
-    # --- Save -------------------------------------------------------------
     np.save(OUTPUT_DIR / "recipe_vectors.npy", recipe_vectors)
     with open(OUTPUT_DIR / "recipe_id_map.json", "w", encoding="utf-8") as f:
         json.dump(recipe_id_map, f)

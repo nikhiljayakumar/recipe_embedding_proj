@@ -1,4 +1,4 @@
-"""search.py — Public search API for the recipe embedding demo.
+"""search.py — search API for the demo to use
 
 All public functions return list[dict] with consistent keys and JSON-safe
 (Python float) scores. Missing inputs return [], never raise.
@@ -9,26 +9,6 @@ Loaded once at import (slow path; ~3-5s):
   - Word2Vec model (for analogies)
   - Recipe metadata + ID maps
   - In-memory copies of recipe / ingredient vectors
-
-Layout assumed:
-  <project_root>/
-    data/processed/recipes_clean.pkl
-    embeddings/
-      recipe_vectors.npy
-      recipe_vectors_from_ingredients.npy
-      ingredient_vectors.npy
-      ingredient_id_map.json
-      ingredient_id_map_reverse.json
-      recipe_id_map.json
-      word2vec.model
-    search/
-      search.py                        <- this file
-      recipe_text_index.faiss          <- built by build_indices.py
-      recipe_ingredient_index.faiss
-      ingredient_index.faiss
-
-Agent 4: import the public functions below directly. Don't reach into
-the underscore-prefixed globals — they may move.
 """
 
 from __future__ import annotations
@@ -45,31 +25,18 @@ from gensim.models import Word2Vec
 from sentence_transformers import SentenceTransformer
 
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
+# Paths - change if necssary
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _EMB_DIR = _PROJECT_ROOT / "embeddings"
 _DATA_PATH = _PROJECT_ROOT / "data" / "processed" / "recipes_clean.pkl"
 _SEARCH_DIR = _PROJECT_ROOT / "search"
 
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-# This MUST match the model used by Agent 2's encode_sbert.py. The 384-dim
-# contract implies all-MiniLM-L6-v2 (the standard SBERT default at that
-# dimensionality). If this is wrong, query encoding produces vectors from a
-# different model than the index was built from -> garbage neighbors with no
-# crash. Verify by running test_search.py and eyeballing whether
-# `find_similar_recipes_by_text("chicken curry")` returns curries.
+# Config - model must match 
 _SBERT_MODEL_NAME = "all-MiniLM-L6-v2"
 
 
-# ---------------------------------------------------------------------------
-# Resource loading (module-level, runs once at import)
-# ---------------------------------------------------------------------------
-
+# do once
 # FAISS indices
 _recipe_text_index = faiss.read_index(str(_SEARCH_DIR / "recipe_text_index.faiss"))
 _recipe_ing_index = faiss.read_index(str(_SEARCH_DIR / "recipe_ingredient_index.faiss"))
@@ -106,10 +73,7 @@ _w2v = Word2Vec.load(str(_EMB_DIR / "word2vec.model"))
 _sbert = SentenceTransformer(_SBERT_MODEL_NAME)
 
 
-# ---------------------------------------------------------------------------
 # Helpers (private)
-# ---------------------------------------------------------------------------
-
 _TITLE_NORM_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -135,15 +99,9 @@ def _resolve_ingredient(name: str) -> Optional[str]:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
+# api streamlit will call
 def is_known_ingredient(name: str) -> Optional[str]:
     """Return canonical form of `name` if it's in the vocab, else None.
-
-    Useful for Agent 4 to give specific UI errors before calling the
-    similarity functions (which return [] silently for unknowns).
     """
     return _resolve_ingredient(name)
 
@@ -159,10 +117,6 @@ def find_similar_recipes_by_text(
         query: free-text query, e.g. "spicy thai noodles".
         k: number of results to return.
         dedup: if True (default), filter near-duplicate recipe titles.
-            The dataset has many near-identical recipes (Agent 2 flagged
-            5x "Soft Pretzels" near recipe 0); without dedup, top-k is
-            often dominated by repeats.
-
     Returns:
         list of {'id' (int recipe_id), 'title' (str), 'score' (float)}.
         Score is cosine similarity, roughly in [-1, 1].
@@ -208,17 +162,12 @@ def find_similar_recipes_by_recipe_id(
         recipe_id: must be a valid recipe_id in the dataset.
         k: number of results.
         mode: 'text' uses the SBERT (384-dim) recipe index;
-              'ingredient' uses the pooled-Word2Vec (100-dim) recipe index.
         dedup: filter near-duplicate titles.
 
     Returns:
-        list of {'id', 'title', 'score'}. The query recipe itself is
-        always excluded. Returns [] if recipe_id is unknown OR (in
-        ingredient mode) if the recipe's pooled vector is the zero vector
-        (i.e. all its ingredients were filtered out upstream).
-
-    Raises:
-        ValueError: if mode is not 'text' or 'ingredient'.
+        list of {'id', 'title', 'score'}.
+    
+    bad if not recipe or ingred
     """
     if recipe_id not in _recipe_id_to_row:
         return []
@@ -233,12 +182,8 @@ def find_similar_recipes_by_recipe_id(
 
     qvec = vecs[row : row + 1].astype("float32")
     if mode == "ingredient" and float(np.linalg.norm(qvec)) < 1e-6:
-        # Zero-vector recipe (Agent 2 leaves these as exact zeros for recipes
-        # whose ingredients were all filtered upstream). A zero query gives
-        # garbage neighbors; bail out clean.
         return []
 
-    # +1 to leave room for self-match; *5 buffer for dedup.
     search_k = min((k + 1) * (5 if dedup else 1), index.ntotal)
     scores, idxs = index.search(qvec, search_k)
 
@@ -268,10 +213,8 @@ def find_similar_recipes_by_recipe_id(
 
 def find_similar_ingredients(ingredient: str, k: int = 10) -> list[dict]:
     """Top-k ingredients similar to `ingredient` by cosine similarity.
-
     Name is matched flexibly against the vocab (verbatim, space->underscore,
     hyphen->underscore). Returns [] if not in vocab.
-
     Returns:
         list of {'name', 'score'}.
     """
@@ -304,15 +247,12 @@ def find_recipes_by_ingredients(
     dedup: bool = True,
 ) -> list[dict]:
     """Pool the given ingredient vectors and find recipes near the pooled point.
-
     Ingredients not in vocab are silently skipped. If none of the given
     ingredients are in vocab (or the pooled vector is zero), returns [].
-
     Args:
         ingredients: list of ingredient names.
         k: number of results.
         dedup: filter near-duplicate titles.
-
     Returns:
         list of {'id', 'title', 'score'}.
     """
@@ -363,12 +303,6 @@ def ingredient_analogy(
     k: int = 5,
 ) -> list[dict]:
     """Vector arithmetic: sum(positive) - sum(negative) -> top-k ingredients.
-
-    Uses gensim's most_similar (handles normalization internally). If any
-    positive or negative term is missing from the W2V vocab, returns [].
-    Use is_known_ingredient() in the UI to pre-check terms if you want to
-    show a more specific error.
-
     Args:
         positive: terms to add (must be non-empty).
         negative: terms to subtract (may be empty / None).

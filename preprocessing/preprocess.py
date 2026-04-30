@@ -1,23 +1,15 @@
 """
-Agent 1 main preprocessing pipeline.
-
-Run AFTER smoke_test.py passes. Default end-to-end:
-
-    python preprocess.py --source mbien/recipe_nlg
-
-Or with a local RecipeNLG CSV:
-
-    python preprocess.py --source ./full_dataset.csv
+python preprocess.py --source ./path/to/full_dataset.csv
 
 Outputs to ./data/:
-  - recipes_clean.pkl      (canonical artifact, downstream agents load this)
+  - recipes_clean.pkl      (canonical artifact)
   - recipes_clean.parquet  (inspection / portability copy)
   - ingredient_vocab.json  (ingredient -> document frequency)
   - preprocessing_report.md
-  - schemas.py             (copied here for downstream agent import convenience)
+  - schemas.py             (copied here for downstream import convenience)
 
 Normalization uses RecipeNLG's NER column (already stripped of quantities/units)
-as the starting point, then applies: lowercase → singularize → synonym map.
+as the starting point, then applies: lowercase --> singularize --> synonym map.
 """
 
 from __future__ import annotations
@@ -430,97 +422,13 @@ def phase_5_finalize(df: pd.DataFrame, out_dir: Path) -> tuple[pd.DataFrame, Cou
 
     return df, final_vocab
 
-
-# =============================================================================
-# Report writer
-# =============================================================================
-
-def write_report(
-    funnel: list[tuple[str, int]],
-    vocab: Counter,
-    df_final: pd.DataFrame,
-    out_path: Path,
-    seed: int,
-) -> None:
-    rng = random.Random(seed)
-    sample_ids = rng.sample(range(len(df_final)), k=min(20, len(df_final)))
-    samples = df_final.iloc[sample_ids]
-
-    lines: list[str] = []
-    lines.append("# Preprocessing Report")
-    lines.append("")
-    lines.append(f"Schema version: **{SCHEMA_VERSION}**")
-    lines.append("")
-    lines.append("## Funnel")
-    lines.append("")
-    lines.append("| Step | Recipe count |")
-    lines.append("|---|---|")
-    for step, n in funnel:
-        lines.append(f"| {step} | {n:,} |")
-
-    lines.append("")
-    lines.append("## Vocabulary")
-    lines.append("")
-    lines.append(f"- Unique normalized ingredients: **{len(vocab):,}**")
-    if vocab:
-        max_freq = max(vocab.values())
-        median_freq = sorted(vocab.values())[len(vocab) // 2]
-        lines.append(f"- Max document frequency: {max_freq:,}")
-        lines.append(f"- Median document frequency: {median_freq:,}")
-    lines.append(f"- Min document frequency (filter threshold): 5")
-    lines.append("")
-    lines.append("### Top 50 most common ingredients")
-    lines.append("")
-    lines.append("| Rank | Ingredient | Doc frequency |")
-    lines.append("|---|---|---|")
-    for i, (ing, freq) in enumerate(sorted(vocab.items(), key=lambda x: -x[1])[:50], 1):
-        lines.append(f"| {i} | `{ing}` | {freq:,} |")
-
-    lines.append("")
-    lines.append("## Normalization samples (20 random recipes)")
-    lines.append("")
-    for _, row in samples.iterrows():
-        lines.append(f"### Recipe {row[RECIPE_ID]}: {row[TITLE]}")
-        lines.append("")
-        lines.append("**Raw ingredients:**")
-        for r in row[RAW_INGREDIENTS]:
-            disp = r if len(r) <= 90 else r[:87] + "..."
-            lines.append(f"- {disp}")
-        lines.append("")
-        lines.append("**Normalized:** " +
-                     ", ".join(f"`{n}`" for n in row[NORMALIZED_INGREDIENTS]))
-        lines.append("")
-
-    lines.append("## Decisions and notes for downstream agents")
-    lines.append("")
-    lines.append("- **Multi-word tokens preserved with spaces.** `\"olive oil\"` "
-                 "is one list element, NOT `\"olive_oil\"`. Gensim treats each "
-                 "list element as one token.")
-    lines.append("- **Dedup key:** `(frozenset(normalized_ingredients), "
-                 "len(instructions) // 100)`. Same-ingredient recipes with "
-                 "wildly different instruction lengths are treated as distinct.")
-    lines.append("- **NER source:** `normalized_ingredients` is derived from "
-                 "RecipeNLG's `ner` column (quantities and units already removed). "
-                 "No heavy ingredient-parser step required.")
-    lines.append(f"- **Synonym map size:** {len(SYNONYMS)} entries. "
-                 "See `preprocess.py` SYNONYMS dict for the full list with rationale.")
-    lines.append("- **Cilantro vs coriander:** `\"coriander leaves\"` -> `\"cilantro\"` "
-                 "but bare `\"coriander\"` is left alone (US recipes use bare "
-                 "\"coriander\" for the spice).")
-    lines.append("- **Singularization:** last word only, with an uncountable-noun "
-                 "guard list to avoid `molasses` -> `molass`.")
-
-    out_path.write_text("\n".join(lines), encoding="utf-8")
-    log.info("  wrote %s", out_path)
-
-
 # =============================================================================
 # Main
 # =============================================================================
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Agent 1 preprocessing pipeline for RecipeNLG."
+        description=""
     )
     p.add_argument("--source", default="./data/recipe_nlg/full_dataset.csv",
                    help="HuggingFace dataset name or local CSV path")
@@ -564,14 +472,10 @@ def main() -> None:
     df_final, vocab = phase_5_finalize(df, out_dir)
     funnel.append(("Final", len(df_final)))
 
-    # Copy schemas.py into out_dir for downstream agent convenience
+    # Copy schemas.py into out_dir for downstream convenience
     src_schemas = Path(__file__).parent / "schemas.py"
     if src_schemas.exists():
         shutil.copy(src_schemas, out_dir / "schemas.py")
-
-    # Report
-    write_report(funnel, vocab, df_final, out_dir / "preprocessing_report.md",
-                 seed=args.seed)
 
     dt = time.perf_counter() - t_start
     log.info("DONE in %.1f min", dt / 60)

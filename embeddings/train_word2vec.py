@@ -1,5 +1,5 @@
 """
-01_train_word2vec.py
+train_word2vec.py
 --------------------
 Trains a skip-gram Word2Vec model on ingredient co-occurrence.
 
@@ -9,8 +9,7 @@ right tool for single-token ingredient embeddings -- it's literally what
 Word2Vec was designed for.
 
 Outputs (in OUTPUT_DIR):
-    - word2vec.model               : full gensim model (Agent 3 may want it
-                                     for OOV handling)
+    - word2vec.model               : full gensim model 
     - ingredient_vectors.npy       : (V, 100) numpy array, RAW (unnormalized)
     - ingredient_id_map.json       : {ingredient_name: row_index}
     - ingredient_id_map_reverse.json : {row_index: ingredient_name}
@@ -32,7 +31,7 @@ OUTPUT_DIR = Path("./embeddings")
 
 VECTOR_SIZE = 100   # standard sweet spot for 5k+ vocab
 WINDOW = 10         # ingredient order in a recipe is mostly arbitrary
-MIN_COUNT = 5       # safety net; Agent 1 should already have filtered
+MIN_COUNT = 5       # safety net; filterd by preprocessing 
 SG = 1              # skip-gram, better than CBOW for small-ish vocabs
 EPOCHS = 20         # 50k recipes is small by NLP standards; more epochs helps
 WORKERS = 4         # bump to 8 if you have a beefy CPU
@@ -46,7 +45,6 @@ def main() -> None:
     print(f"Loading recipes from {DATA_PATH}...")
     df = pd.read_pickle(DATA_PATH)
 
-    # --- Verify Agent 1's contract -----------------------------------------
     assert "recipe_id" in df.columns, "Missing recipe_id column"
     assert "normalized_ingredients" in df.columns, "Missing normalized_ingredients"
     assert df["recipe_id"].is_monotonic_increasing, "recipe_id is not sorted"
@@ -56,7 +54,6 @@ def main() -> None:
     sample = df["normalized_ingredients"].iloc[0]
     assert isinstance(sample, list), (
         f"normalized_ingredients must be lists of strings, got {type(sample)}. "
-        "Did Agent 1 stringify them by accident?"
     )
     assert all(isinstance(t, str) for t in sample), "Ingredient tokens must be strings"
     print(f"  OK -- {len(df)} recipes, sample ingredients: {sample[:5]}")
@@ -85,7 +82,6 @@ def main() -> None:
     ingredient_id_map = {w: i for i, w in enumerate(vocab)}
     ingredient_id_map_reverse = {str(i): w for i, w in enumerate(vocab)}
 
-    # --- Save --------------------------------------------------------------
     np.save(OUTPUT_DIR / "ingredient_vectors.npy", ingredient_vectors)
     with open(OUTPUT_DIR / "ingredient_id_map.json", "w", encoding="utf-8") as f:
         json.dump(ingredient_id_map, f, ensure_ascii=False, indent=2)
@@ -99,7 +95,7 @@ def main() -> None:
     print(f"  ingredient_id_map_reverse.json")
     print(f"  word2vec.model")
 
-    # --- Quick smell test --------------------------------------------------
+    # --- sanity check --------------------------------------------------
     print("\n--- Quick nearest-neighbor smell test ---")
     for probe in ["basil", "soy sauce", "butter", "garlic", "lime"]:
         if probe in w2v_model.wv:
@@ -108,10 +104,6 @@ def main() -> None:
             print(f"  {probe:12s} -> {pretty}")
         else:
             print(f"  {probe:12s} -> [not in vocab]")
-    print(
-        "\nIf any of those look wrong (e.g. closest neighbor is '1/2' or 'and'), "
-        "go yell at Agent 1 about the vocab before continuing."
-    )
 
 
 if __name__ == "__main__":
